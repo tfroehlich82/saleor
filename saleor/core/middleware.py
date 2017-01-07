@@ -1,30 +1,17 @@
 import logging
-from subprocess import Popen, PIPE
 
 from django.conf import settings
 from django.utils.translation import get_language
+from django_countries.fields import Country
 
 from . import analytics
-from ..product.models import FixedProductDiscount
+from ..discount.models import Sale
+from .utils import get_client_ip, get_country_by_ip, get_currency_for_country
 
 logger = logging.getLogger(__name__)
 
 
-class CheckHTML(object):
-
-    def process_response(self, request, response):
-        if (settings.DEBUG and
-                settings.WARN_ABOUT_INVALID_HTML5_OUTPUT and
-                200 <= response.status_code < 300):
-            proc = Popen(["tidy"], stdout=PIPE, stderr=PIPE, stdin=PIPE)
-            _out, err = proc.communicate(response.content)
-            for l in err.split('\n\n')[0].split('\n')[:-2]:
-                logger.warning(l)
-        return response
-
-
 class GoogleAnalytics(object):
-
     def process_request(self, request):
         client_id = analytics.get_client_id(request)
         path = request.path
@@ -39,8 +26,26 @@ class GoogleAnalytics(object):
 
 
 class DiscountMiddleware(object):
+    def process_request(self, request):
+        discounts = Sale.objects.all()
+        discounts = discounts.prefetch_related('products', 'categories')
+        request.discounts = discounts
+
+
+class CountryMiddleware(object):
 
     def process_request(self, request):
-        discounts = FixedProductDiscount.objects.all()
-        discounts = discounts.prefetch_related('products')
-        request.discounts = discounts
+        client_ip = get_client_ip(request)
+        if client_ip:
+            request.country = get_country_by_ip(client_ip)
+        if not request.country:
+            request.country = Country(settings.DEFAULT_COUNTRY)
+
+
+class CurrencyMiddleware(object):
+
+    def process_request(self, request):
+        if hasattr(request, 'country') and request.country is not None:
+            request.currency = get_currency_for_country(request.country)
+        else:
+            request.currency = settings.DEFAULT_CURRENCY

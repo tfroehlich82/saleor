@@ -1,28 +1,86 @@
 from django import forms
-from django.contrib.auth.models import AnonymousUser
+from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
+from django_prices.templatetags.prices_i18n import format_price
 
-from ..userprofile.forms import AddressForm
-
-
-class ShippingForm(AddressForm):
-
-    shipping_same_as_billing = forms.BooleanField(initial=True, required=False)
+from ..shipping.models import ShippingMethodCountry
 
 
-class DeliveryForm(forms.Form):
+class CheckoutAddressField(forms.ChoiceField):
 
-    method = forms.ChoiceField(label=_('Shipping method'))
+    widget = forms.RadioSelect()
 
-    def __init__(self, delivery_choices, *args, **kwargs):
-        super(DeliveryForm, self).__init__(*args, **kwargs)
+
+class ShippingAddressesForm(forms.Form):
+
+    NEW_ADDRESS = 'new_address'
+    CHOICES = (
+        (NEW_ADDRESS, _('Enter a new address')),
+    )
+
+    address = CheckoutAddressField(choices=CHOICES, initial=NEW_ADDRESS)
+
+    def __init__(self, *args, **kwargs):
+        additional_addresses = kwargs.pop('additional_addresses', [])
+        super(ShippingAddressesForm, self).__init__(*args, **kwargs)
+        address_field = self.fields['address']
+        address_choices = [
+            (address.id, str(address)) for address in additional_addresses]
+        address_field.choices = list(self.CHOICES) + address_choices
+
+
+class BillingAddressesForm(ShippingAddressesForm):
+
+    NEW_ADDRESS = 'new_address'
+    SHIPPING_ADDRESS = 'shipping_address'
+    CHOICES = (
+        (NEW_ADDRESS, _('Enter a new address')),
+        (SHIPPING_ADDRESS, _('Same as shipping'))
+    )
+
+    address = CheckoutAddressField(choices=CHOICES, initial=SHIPPING_ADDRESS)
+
+
+class BillingWithoutShippingAddressForm(ShippingAddressesForm):
+
+    pass
+
+
+class ShippingCountryChoiceField(forms.ModelChoiceField):
+
+    widget = forms.RadioSelect()
+
+    def label_from_instance(self, obj):
+        price_html = format_price(obj.price.gross, obj.price.currency)
+        label = mark_safe('%s %s' % (obj.shipping_method, price_html))
+        return label
+
+
+class ShippingMethodForm(forms.Form):
+
+    method = ShippingCountryChoiceField(
+        queryset=ShippingMethodCountry.objects.select_related(
+            'shipping_method').order_by('price').all(),
+        label=_('Shipping method'), required=True)
+
+    def __init__(self, country_code, *args, **kwargs):
+        super(ShippingMethodForm, self).__init__(*args, **kwargs)
         method_field = self.fields['method']
-        method_field.choices = delivery_choices
-        if len(delivery_choices) == 1:
-            method_field.initial = delivery_choices[0][1]
-            method_field.widget = forms.HiddenInput()
+        if country_code:
+            queryset = method_field.queryset
+            method_field.queryset = queryset.unique_for_country_code(country_code)
+        if self.initial.get('method') is None:
+            method_field.initial = method_field.queryset.first()
+        method_field.empty_label = None
 
 
-class AnonymousEmailForm(forms.Form):
+class AnonymousUserShippingForm(forms.Form):
 
-    email = forms.EmailField()
+    email = forms.EmailField(
+        required=True, widget=forms.EmailInput(attrs={'autocomplete': 'shipping email'}))
+
+
+class AnonymousUserBillingForm(forms.Form):
+
+    email = forms.EmailField(
+        required=True, widget=forms.EmailInput(attrs={'autocomplete': 'billing email'}))

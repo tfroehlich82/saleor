@@ -1,7 +1,5 @@
 @mixin form {
   .select-wrapper {
-    margin-top: -3px;
-
     &.invalid {
       input {
         @extend .invalid;
@@ -12,27 +10,20 @@
   label {
     @extend .active;
     display: block;
-
-    &.optional {
-      &:before {
-        content: "(optional)";
-        float: right;
-        margin-left: 3px;
-      }
-    }
   }
 
   input[type=radio] {
     @extend .with-gap;
   }
 
-  .price-wrapper {
-    overflow: hidden;
+  select[multiple] {
+    display: initial;
   }
 
   p.help-block {
     margin: -7px 0 15px;
     font-size: $label-font-size;
+    clear: both;
   }
 
   %input-lg {
@@ -85,6 +76,18 @@
 
   &#form-category {
     #id_name {
+      @extend %input-lg;
+    }
+  }
+
+  &#form-sales {
+    #id_name {
+      @extend %input-lg;
+    }
+  }
+
+  &#form-vouchers {
+    #id_code {
       @extend %input-lg;
     }
   }

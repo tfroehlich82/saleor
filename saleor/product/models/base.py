@@ -1,28 +1,28 @@
 from __future__ import unicode_literals
-from decimal import Decimal
+
 import datetime
+from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.postgres.fields import HStoreField
 from django.core.urlresolvers import reverse
 from django.core.validators import MinValueValidator, RegexValidator
-from django.db.models import Manager, Q
-from django.utils.encoding import python_2_unicode_compatible, smart_text
 from django.db import models
+from django.db.models import F, Manager, Q
+from django.utils.encoding import python_2_unicode_compatible, smart_text
 from django.utils.text import slugify
 from django.utils.translation import pgettext_lazy
 from django_prices.models import PriceField
-from jsonfield import JSONField
-from model_utils.managers import InheritanceManager
 from mptt.managers import TreeManager
 from mptt.models import MPTTModel
-from satchless.item import ItemRange, Item, InsufficientStock
+from satchless.item import InsufficientStock, Item, ItemRange
 from unidecode import unidecode
-
 from versatileimagefield.fields import VersatileImageField
 
-from .discounts import get_product_discounts
+from ...discount.models import get_variant_discounts
 from .fields import WeightField
-from saleor.product.utils import get_attributes_display_map
+from .utils import get_attributes_display_map
+from ...search import index
 
 
 @python_2_unicode_compatible
@@ -46,8 +46,9 @@ class Category(MPTTModel):
         return self.name
 
     def get_absolute_url(self):
-        return reverse('product:category', kwargs={'path': self.get_full_path(),
-                                                   'category_id': self.id})
+        return reverse('product:category',
+                       kwargs={'path': self.get_full_path(),
+                               'category_id': self.id})
 
     def get_full_path(self):
         if not self.parent_id:
@@ -63,15 +64,38 @@ class Category(MPTTModel):
         self.get_descendants().update(hidden=hidden)
 
 
-class ProductManager(InheritanceManager):
+@python_2_unicode_compatible
+class ProductClass(models.Model):
+    name = models.CharField(
+        pgettext_lazy('Product field', 'name'), max_length=128)
+    has_variants = models.BooleanField(default=True)
+    product_attributes = models.ManyToManyField(
+        'ProductAttribute', related_name='products_class', blank=True)
+    variant_attributes = models.ManyToManyField(
+        'ProductAttribute', related_name='product_variants_class', blank=True)
+
+    class Meta:
+        app_label = 'product'
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        class_ = type(self)
+        return '<%s.%s(pk=%r, name=%r)>' % (
+            class_.__module__, class_.__name__, self.pk, self.name)
+
+
+class ProductManager(models.Manager):
     def get_available_products(self):
-        today = datetime.datetime.today()
+        today = datetime.date.today()
         return self.get_queryset().filter(
             Q(available_on__lte=today) | Q(available_on__isnull=True))
 
 
 @python_2_unicode_compatible
-class Product(models.Model, ItemRange):
+class Product(models.Model, ItemRange, index.Indexed):
+    product_class = models.ForeignKey(ProductClass, related_name='products')
     name = models.CharField(
         pgettext_lazy('Product field', 'name'), max_length=128)
     description = models.TextField(
@@ -87,10 +111,17 @@ class Product(models.Model, ItemRange):
         max_digits=6, decimal_places=2)
     available_on = models.DateField(
         pgettext_lazy('Product field', 'available on'), blank=True, null=True)
-    attributes = models.ManyToManyField(
-        'ProductAttribute', related_name='products', blank=True)
+    attributes = HStoreField(pgettext_lazy('Product field', 'attributes'),
+                             default={})
+    updated_at = models.DateTimeField(
+        pgettext_lazy('Product field', 'updated at'), auto_now=True, null=True)
 
     objects = ProductManager()
+
+    search_fields = [
+        index.SearchField('name', partial_match=True),
+        index.SearchField('description'),
+        index.FilterField('available_on')]
 
     class Meta:
         app_label = 'product'
@@ -115,32 +146,6 @@ class Product(models.Model, ItemRange):
     def get_slug(self):
         return slugify(smart_text(unidecode(self.name)))
 
-    def get_formatted_price(self, price):
-        return "{0} {1}".format(price.gross, price.currency)
-
-    def get_price_per_item(self, item, discounts=None, **kwargs):
-        price = self.price
-        if price and discounts:
-            discounts = list(get_product_discounts(self, discounts, **kwargs))
-            if discounts:
-                modifier = max(discounts)
-                price += modifier
-        return price
-
-    def admin_get_price_min(self):
-        price = self.get_price_range().min_price
-        return self.get_formatted_price(price)
-
-    admin_get_price_min.short_description = pgettext_lazy(
-        'Product admin page', 'Minimum price')
-
-    def admin_get_price_max(self):
-        price = self.get_price_range().max_price
-        return self.get_formatted_price(price)
-
-    admin_get_price_max.short_description = pgettext_lazy(
-        'Product admin page', 'Maximum price')
-
     def is_in_stock(self):
         return any(variant.is_in_stock() for variant in self)
 
@@ -150,13 +155,31 @@ class Product(models.Model, ItemRange):
                 return category
         return None
 
+    def is_available(self):
+        today = datetime.date.today()
+        return self.available_on is None or self.available_on <= today
+
+    def get_first_image(self):
+        first_image = self.images.first()
+
+        if first_image:
+            return first_image.image
+        return None
+
+    def get_attribute(self, pk):
+        return self.attributes.get(smart_text(pk))
+
+    def set_attribute(self, pk, value_pk):
+        self.attributes[smart_text(pk)] = smart_text(value_pk)
+
 
 @python_2_unicode_compatible
 class ProductVariant(models.Model, Item):
     sku = models.CharField(
         pgettext_lazy('Variant field', 'SKU'), max_length=32, unique=True)
     name = models.CharField(
-        pgettext_lazy('Variant field', 'variant name'), max_length=100, blank=True)
+        pgettext_lazy('Variant field', 'variant name'), max_length=100,
+        blank=True)
     price_override = PriceField(
         pgettext_lazy('Variant field', 'price override'),
         currency=settings.DEFAULT_CURRENCY, max_digits=12, decimal_places=2,
@@ -166,10 +189,9 @@ class ProductVariant(models.Model, Item):
         unit=settings.DEFAULT_WEIGHT, max_digits=6, decimal_places=2,
         blank=True, null=True)
     product = models.ForeignKey(Product, related_name='variants')
-    attributes = JSONField(pgettext_lazy('Variant field', 'attributes'),
-                           default={})
-
-    objects = InheritanceManager()
+    attributes = HStoreField(pgettext_lazy('Variant field', 'attributes'),
+                             default={})
+    images = models.ManyToManyField('ProductImage', through='VariantImage')
 
     class Meta:
         app_label = 'product'
@@ -186,15 +208,17 @@ class ProductVariant(models.Model, Item):
             raise InsufficientStock(self)
 
     def get_stock_quantity(self):
-        return sum([stock.quantity for stock in self.stock.all()])
+        if not len(self.stock.all()):
+            return 0
+        return max([stock.quantity_available for stock in self.stock.all()])
 
     def get_price_per_item(self, discounts=None, **kwargs):
         price = self.price_override or self.product.price
         if discounts:
-            discounts = list(get_product_discounts(self, discounts, **kwargs))
+            discounts = list(
+                get_variant_discounts(self, discounts, **kwargs))
             if discounts:
-                modifier = max(discounts)
-                price += modifier
+                price = min(price | discount for discount in discounts)
         return price
 
     def get_absolute_url(self):
@@ -214,14 +238,18 @@ class ProductVariant(models.Model, Item):
         return True
 
     def is_in_stock(self):
-        return any([stock_item.quantity > 0 for stock_item in self.stock.all()])
+        return any(
+            [stock.quantity_available > 0 for stock in self.stock.all()])
 
     def get_attribute(self, pk):
-        return self.attributes.get(str(pk))
+        return self.attributes.get(smart_text(pk))
+
+    def set_attribute(self, pk, value_pk):
+        self.attributes[smart_text(pk)] = smart_text(value_pk)
 
     def display_variant(self, attributes=None):
         if attributes is None:
-            attributes = self.product.attributes.all()
+            attributes = self.product.product_class.variant_attributes.all()
         values = get_attributes_display_map(self, attributes).values()
         if values:
             return ', '.join([smart_text(value) for value in values])
@@ -232,28 +260,78 @@ class ProductVariant(models.Model, Item):
         return '%s (%s)' % (smart_text(self.product),
                             self.display_variant(attributes=attributes))
 
+    def get_first_image(self):
+        return self.product.get_first_image()
+
+    def select_stockrecord(self, quantity=1):
+        # By default selects stock with lowest cost price
+        stock = filter(
+            lambda stock: stock.quantity_available >= quantity,
+            self.stock.all())
+        stock = sorted(stock, key=lambda stock: stock.cost_price, reverse=True)
+        if stock:
+            return stock[0]
+
+    def get_cost_price(self):
+        stock = self.select_stockrecord()
+        if stock:
+            return stock.cost_price
+
+
+@python_2_unicode_compatible
+class StockLocation(models.Model):
+    name = models.CharField(
+        pgettext_lazy('Stock item field', 'location'), max_length=100)
+
+    def __str__(self):
+        return self.name
+
+
+class StockManager(models.Manager):
+
+    def allocate_stock(self, stock, quantity):
+        stock.quantity_allocated = F('quantity_allocated') + quantity
+        stock.save(update_fields=['quantity_allocated'])
+
+    def deallocate_stock(self, stock, quantity):
+        stock.quantity_allocated = F('quantity_allocated') - quantity
+        stock.save(update_fields=['quantity_allocated'])
+
+    def decrease_stock(self, stock, quantity):
+        stock.quantity = F('quantity') - quantity
+        stock.quantity_allocated = F('quantity_allocated') - quantity
+        stock.save(update_fields=['quantity', 'quantity_allocated'])
+
 
 @python_2_unicode_compatible
 class Stock(models.Model):
     variant = models.ForeignKey(
         ProductVariant, related_name='stock',
         verbose_name=pgettext_lazy('Stock item field', 'variant'))
-    location = models.CharField(
-        pgettext_lazy('Stock item field', 'location'), max_length=100)
+    location = models.ForeignKey(StockLocation, null=True)
     quantity = models.IntegerField(
         pgettext_lazy('Stock item field', 'quantity'),
         validators=[MinValueValidator(0)], default=Decimal(1))
+    quantity_allocated = models.IntegerField(
+        pgettext_lazy('Stock item field', 'allocated quantity'),
+        validators=[MinValueValidator(0)], default=Decimal(0))
     cost_price = PriceField(
         pgettext_lazy('Stock item field', 'cost price'),
         currency=settings.DEFAULT_CURRENCY, max_digits=12, decimal_places=2,
         blank=True, null=True)
+
+    objects = StockManager()
 
     class Meta:
         app_label = 'product'
         unique_together = ('variant', 'location')
 
     def __str__(self):
-        return "%s - %s" % (self.variant.name, self.location)
+        return '%s - %s' % (self.variant.name, self.location)
+
+    @property
+    def quantity_available(self):
+        return max(self.quantity - self.quantity_allocated, 0)
 
 
 @python_2_unicode_compatible
@@ -288,9 +366,6 @@ class AttributeChoiceValue(models.Model):
         max_length=7,
         validators=[RegexValidator('^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$')],
         blank=True)
-    image = VersatileImageField(
-        pgettext_lazy('Attribute choice value field', 'image'),
-        upload_to='attributes', blank=True, null=True)
     attribute = models.ForeignKey(ProductAttribute, related_name='values')
 
     def __str__(self):

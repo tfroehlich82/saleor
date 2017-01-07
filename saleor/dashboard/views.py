@@ -1,6 +1,6 @@
 from django.conf import settings
-from django.contrib.admin.views.decorators import staff_member_required \
-    as _staff_member_required
+from django.contrib.admin.views.decorators import \
+    staff_member_required as _staff_member_required
 from django.db.models import Q, Sum
 from django.template.response import TemplateResponse
 from django.utils.decorators import method_decorator
@@ -8,11 +8,11 @@ from django.views.generic.edit import FormMixin
 
 from ..order.models import Order, Payment
 from ..product.models import Product
-from saleor.dashboard.order.forms import OrderFilterForm
+from .order.forms import OrderFilterForm
 
 
 def staff_member_required(f):
-    return _staff_member_required(f, login_url='registration:login')
+    return _staff_member_required(f, login_url='account_login')
 
 
 class StaffMemberOnlyMixin(object):
@@ -57,12 +57,14 @@ def index(request):
     payments = Payment.objects.filter(status='preauth').order_by('-created')
     payments = payments.select_related('order', 'order__user')
     low_stock = get_low_stock_products()
-    ctx = {'preauthorized_payments': payments, 'orders_to_ship': orders_to_ship,
+    ctx = {'preauthorized_payments': payments,
+           'orders_to_ship': orders_to_ship,
            'low_stock': low_stock}
     return TemplateResponse(request, 'dashboard/index.html', ctx)
 
 
 def get_low_stock_products():
     threshold = getattr(settings, 'LOW_STOCK_THRESHOLD', 10)
-    products = Product.objects.annotate(total_stock=Sum('variants__stock__quantity'))
+    products = Product.objects.annotate(
+        total_stock=Sum('variants__stock__quantity'))
     return products.filter(Q(total_stock__lte=threshold)).distinct()
