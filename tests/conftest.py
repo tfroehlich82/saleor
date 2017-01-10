@@ -9,7 +9,7 @@ from mock import Mock
 from saleor.cart import utils
 from saleor.cart.models import Cart
 from saleor.checkout.core import Checkout
-from saleor.discount.models import Voucher
+from saleor.discount.models import Voucher, Sale
 from saleor.order.models import Order
 from saleor.product.models import (AttributeChoiceValue, Category, Product,
                                    ProductAttribute, ProductClass,
@@ -34,6 +34,7 @@ def request_cart(cart, monkeypatch):
     monkeypatch.setattr(
         utils, 'get_cart_from_request',
         lambda request, cart_queryset=None: cart)
+    cart.discounts = Sale.objects.all()
     return cart
 
 
@@ -115,7 +116,8 @@ def default_category(db):  # pylint: disable=W0613
 @pytest.fixture
 def product_class(color_attribute, size_attribute):
     product_class = ProductClass.objects.create(name='Default Class',
-                                                has_variants=False)
+                                                has_variants=False,
+                                                is_shipping_required=True)
     product_class.product_attributes.add(color_attribute)
     product_class.variant_attributes.add(size_attribute)
     return product_class
@@ -151,3 +153,10 @@ def anonymous_checkout():
 @pytest.fixture
 def voucher(db):  # pylint: disable=W0613
     return Voucher.objects.create(code='mirumee', discount_value=20)
+
+
+@pytest.fixture()
+def sale(db, default_category):
+    sale = Sale.objects.create(name="Sale", value=5)
+    sale.categories.add(default_category)
+    return sale
