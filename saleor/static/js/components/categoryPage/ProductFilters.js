@@ -3,7 +3,6 @@ import Relay from 'react-relay';
 
 import AttributeInput from './AttributeInput';
 
-
 class ProductFilters extends Component {
 
   constructor(props) {
@@ -29,7 +28,7 @@ class ProductFilters extends Component {
 
   changeVisibility = (target) => {
     this.setState({
-      visibility: Object.assign(this.state.visibility, {[target] : !this.state.visibility[target]})
+      visibility: Object.assign(this.state.visibility, {[target]: !this.state.visibility[target]})
     });
   }
 
@@ -37,9 +36,9 @@ class ProductFilters extends Component {
     this.props.attributes.map((attribute) => {
       const attrValue = `${attribute.name}`;
       this.setState({
-        visibility: Object.assign(this.state.visibility, {[attrValue] : true})
+        visibility: Object.assign(this.state.visibility, {[attrValue]: true})
       });
-    })
+    });
   }
 
   render() {
@@ -52,12 +51,12 @@ class ProductFilters extends Component {
             <div key={attribute.id}>
               <h3 className={attribute.name} onClick={() => this.changeVisibility(attribute.name)}>
                 {attribute.display}
-                <img className="float-right" src={visibility[attribute.name] ? ('/static/img/chevron-up-icon.svg') : ('/static/img/chevron-down-icon.svg')} width="20" />
+                <img className="float-right" src={visibility[attribute.name] ? ('/static/images/chevron-up-icon.svg') : ('/static/images/chevron-down-icon.svg')} width="20" />
               </h3>
               <ul id={attribute.name}>
                 {attribute.values.map((value) => {
                   const key = this.getFilterKey(attribute.name, value.slug);
-                    if(visibility[attribute.name] || checkedAttributes.includes(key)) {
+                  if (visibility[attribute.name] || checkedAttributes.includes(key)) {
                     return (
                       <li key={value.id} className="item">
                         <AttributeInput
@@ -68,7 +67,7 @@ class ProductFilters extends Component {
                         />
                       </li>
                     );
-                    }
+                  }
                 })}
               </ul>
             </div>
@@ -94,6 +93,6 @@ export default Relay.createContainer(ProductFilters, {
           color
         }
       }
-    `,
-  },
+    `
+  }
 });

@@ -28,9 +28,9 @@ export default class PriceFilter extends Component {
   }
 
   changeVisibility = () => {
-      this.setState({
-        visibility: !this.state.visibility
-      })
+    this.setState({
+      visibility: !this.state.visibility
+    });
   }
 
   render() {
@@ -40,7 +40,7 @@ export default class PriceFilter extends Component {
       <div className="price-range">
         <h3 onClick={this.changeVisibility}>
           Price range
-          <img className="float-right" src={visibility ? ('/static/img/chevron-up-icon.svg') : ('/static/img/chevron-down-icon.svg')} width="20" />
+          <img className="float-right" src={visibility ? ('/static/images/chevron-up-icon.svg') : ('/static/images/chevron-down-icon.svg')} width="20" />
         </h3>
         {visibility || minPrice || maxPrice ? (
           <div>
@@ -50,7 +50,7 @@ export default class PriceFilter extends Component {
               min="0"
               onKeyUp={this.checkKey}
               placeholder="min"
-              ref={input => this.minPriceInput = input}
+              ref={input => (this.minPriceInput = input)}
               type="number"
             />
             <span>&#8212;</span>
@@ -60,7 +60,7 @@ export default class PriceFilter extends Component {
               min="0"
               onKeyUp={this.checkKey}
               placeholder="max"
-              ref={input => this.maxPriceInput = input}
+              ref={input => (this.maxPriceInput = input)}
               type="number"
             />
             <button className="btn" onClick={this.updateFilter}>Update</button>
