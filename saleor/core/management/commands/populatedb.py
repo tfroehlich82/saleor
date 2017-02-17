@@ -1,10 +1,13 @@
+from __future__ import unicode_literals
+
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import connection
 
 from ...utils.random_data import (
     create_orders, create_users, create_shipping_methods,
-    create_products_by_schema, create_product_sales, create_vouchers)
+    create_products_by_schema, create_product_sales, create_vouchers,
+    set_featured_products, add_address_to_admin)
 from ...utils import create_superuser
 
 
@@ -61,10 +64,13 @@ class Command(BaseCommand):
             self.stdout.write(msg)
         for msg in create_orders(20):
             self.stdout.write(msg)
+        for msg in set_featured_products(16):
+            self.stdout.write(msg)
 
         if options['createsuperuser']:
             credentials = {'email': 'admin@example.com', 'password': 'admin'}
             msg = create_superuser(credentials)
             self.stdout.write(msg)
+            add_address_to_admin(credentials['email'])
         if not options['withoutsearch']:
             self.populate_search_index()

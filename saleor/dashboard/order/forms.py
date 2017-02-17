@@ -3,8 +3,7 @@ from __future__ import unicode_literals
 from django import forms
 from django.conf import settings
 from django.shortcuts import get_object_or_404
-from django.utils.translation import ugettext_lazy as _
-from django.utils.translation import pgettext_lazy
+from django.utils.translation import npgettext_lazy, pgettext_lazy
 from django_prices.forms import PriceField
 from payments import PaymentError
 from payments.models import PAYMENT_STATUS_CHOICES
@@ -14,6 +13,7 @@ from ...cart.forms import QuantityField
 from ...discount.models import Voucher
 from ...order import Status
 from ...order.models import DeliveryGroup, Order, OrderedItem, OrderNote
+from ...order.utils import cancel_order, cancel_delivery_group
 from ...product.models import ProductVariant, Stock
 
 
@@ -22,7 +22,9 @@ class OrderNoteForm(forms.ModelForm):
         model = OrderNote
         fields = ['content']
         widgets = {'content': forms.Textarea({
-            'rows': 5, 'placeholder': _('Note')})}
+            'rows': 5,
+            'placeholder': pgettext_lazy(
+                'Order note form placeholder', 'Note')})}
 
     def __init__(self, *args, **kwargs):
         super(OrderNoteForm, self).__init__(*args, **kwargs)
@@ -41,14 +43,20 @@ class CapturePaymentForm(ManagePaymentForm):
     def clean(self):
         if self.payment.status != 'preauth':
             raise forms.ValidationError(
-                _('Only pre-authorized payments can be captured'))
+                pgettext_lazy(
+                    'Payment form error',
+                    'Only pre-authorized payments can be captured'))
 
     def capture(self):
         amount = self.cleaned_data['amount']
         try:
             self.payment.capture(amount.gross)
         except (PaymentError, ValueError) as e:
-            self.add_error(None, _('Payment gateway error: %s') % e.message)
+            self.add_error(
+                None,
+                pgettext_lazy(
+                    'Payment form error',
+                    'Payment gateway error: %s') % e.message)
             return False
         return True
 
@@ -57,14 +65,20 @@ class RefundPaymentForm(ManagePaymentForm):
     def clean(self):
         if self.payment.status != 'confirmed':
             raise forms.ValidationError(
-                _('Only confirmed payments can be refunded'))
+                pgettext_lazy(
+                    'Payment form error',
+                    'Only confirmed payments can be refunded'))
 
     def refund(self):
         amount = self.cleaned_data['amount']
         try:
             self.payment.refund(amount.gross)
         except (PaymentError, ValueError) as e:
-            self.add_error(None, _('Payment gateway error: %s') % e.message)
+            self.add_error(
+                None,
+                pgettext_lazy(
+                    'Payment form error',
+                    'Payment gateway error: %s') % e.message)
             return False
         return True
 
@@ -77,20 +91,28 @@ class ReleasePaymentForm(forms.Form):
     def clean(self):
         if self.payment.status != 'preauth':
             raise forms.ValidationError(
-                _('Only pre-authorized payments can be released'))
+                pgettext_lazy(
+                    'Payment form error',
+                    'Only pre-authorized payments can be released'))
 
     def release(self):
         try:
             self.payment.release()
         except (PaymentError, ValueError) as e:
-            self.add_error(None, _('Payment gateway error: %s') % e.message)
+            self.add_error(
+                None,
+                pgettext_lazy(
+                    'Payment form error',
+                    'Payment gateway error: %s') % e.message)
             return False
         return True
 
 
 class MoveItemsForm(forms.Form):
-    quantity = QuantityField(label=_('Quantity'))
-    target_group = forms.ChoiceField(label=_('Target shipment'))
+    quantity = QuantityField(
+        label=pgettext_lazy('Move items form label', 'Quantity'))
+    target_group = forms.ChoiceField(
+        label=pgettext_lazy('Move items form label', 'Target shipment'))
 
     def __init__(self, *args, **kwargs):
         self.item = kwargs.pop('item')
@@ -103,7 +125,9 @@ class MoveItemsForm(forms.Form):
         group = self.item.delivery_group
         groups = group.order.groups.exclude(pk=group.pk).exclude(
             status='cancelled')
-        choices = [('new', _('New shipment'))]
+        choices = [('new', pgettext_lazy(
+            'Delivery group value for `target_group` field',
+            'New shipment'))]
         choices.extend([(g.pk, str(g)) for g in groups])
         return choices
 
@@ -156,8 +180,11 @@ class ChangeQuantityForm(forms.ModelForm):
             variant.check_quantity(delta)
         except InsufficientStock as e:
             raise forms.ValidationError(
-                _('Only %(remaining)d remaining in stock.') % {
-                    'remaining': e.item.get_stock_quantity()})
+                npgettext_lazy(
+                    'Change quantity form error',
+                    'Only %(remaining)d remaining in stock.',
+                    'Only %(remaining)d remaining in stock.',
+                    'remaining') % {'remaining': e.item.get_stock_quantity()})
         return quantity
 
     def save(self):
@@ -179,12 +206,17 @@ class ShipGroupForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super(ShipGroupForm, self).__init__(*args, **kwargs)
         self.fields['tracking_number'].widget.attrs.update(
-            {'placeholder': _('Parcel tracking number')})
+            {'placeholder': pgettext_lazy(
+                'Ship group form field placeholder',
+                'Parcel tracking number')})
 
     def clean(self):
         if self.instance.status != 'new':
-            raise forms.ValidationError(_('Cannot ship this group'),
-                                        code='invalid')
+            raise forms.ValidationError(
+                pgettext_lazy(
+                    'Ship group form error',
+                    'Cannot ship this group'),
+                code='invalid')
 
     def save(self):
         order = self.instance.order
@@ -205,17 +237,7 @@ class CancelGroupForm(forms.Form):
         super(CancelGroupForm, self).__init__(*args, **kwargs)
 
     def cancel_group(self):
-        for line in self.delivery_group:
-            if line.stock:
-                Stock.objects.deallocate_stock(line.stock, line.quantity)
-        self.delivery_group.status = Status.CANCELLED
-        self.delivery_group.save()
-        other_groups = self.delivery_group.order.groups.all()
-        statuses = set(other_groups.values_list('status', flat=True))
-        if statuses == {Status.CANCELLED}:
-            # Cancel whole order
-            self.delivery_group.order.status = Status.CANCELLED
-            self.delivery_group.order.save(update_fields=['status'])
+        cancel_delivery_group(self.delivery_group)
 
 
 class CancelOrderForm(forms.Form):
@@ -227,13 +249,14 @@ class CancelOrderForm(forms.Form):
     def clean(self):
         data = super(CancelOrderForm, self).clean()
         if not self.order.can_cancel():
-            raise forms.ValidationError(_('This order can\'t be cancelled'))
+            raise forms.ValidationError(
+                pgettext_lazy(
+                    'Cancel order form error',
+                    'This order can\'t be cancelled'))
         return data
 
     def cancel_order(self):
-        for group in self.order.groups.all():
-            group_form = CancelGroupForm(delivery_group=group)
-            group_form.cancel_group()
+        cancel_order(self.order)
 
 
 class RemoveVoucherForm(forms.Form):
@@ -245,7 +268,10 @@ class RemoveVoucherForm(forms.Form):
     def clean(self):
         data = super(RemoveVoucherForm, self).clean()
         if not self.order.voucher:
-            raise forms.ValidationError(_('This order has no voucher'))
+            raise forms.ValidationError(
+                pgettext_lazy(
+                    'Remove voucher form error',
+                    'This order has no voucher'))
         return data
 
     def remove_voucher(self):

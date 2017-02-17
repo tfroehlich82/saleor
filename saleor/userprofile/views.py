@@ -1,4 +1,5 @@
 from allauth.account.adapter import get_adapter
+from allauth.account.views import login as allauth_login
 from allauth.account.forms import ChangePasswordForm
 from allauth.account.utils import logout_on_password_change
 from django.contrib import messages
@@ -7,7 +8,9 @@ from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse
-from django.utils.translation import ugettext as _
+from django.utils.translation import pgettext
+from ..cart.utils import find_and_assign_anonymous_cart
+from .forms import ChangePasswordForm, get_address_form
 
 
 @login_required
@@ -33,11 +36,32 @@ def get_or_process_password_form(request):
 
 
 @login_required
+def address_edit(request, pk):
+    address = get_object_or_404(request.user.addresses, pk=pk)
+    address_form, preview = get_address_form(
+        request.POST or None, instance=address,
+        country_code=address.country.code)
+    if address_form.is_valid() and not preview:
+        address_form.save()
+        message = pgettext('Storefront message', 'Address successfully updated.')
+        messages.success(request, message)
+        return HttpResponseRedirect(reverse('profile:details'))
+    return TemplateResponse(
+        request, 'userprofile/address-edit.html',
+        {'address_form': address_form})
+
+
+@login_required
 def address_delete(request, pk):
     address = get_object_or_404(request.user.addresses, pk=pk)
     if request.method == 'POST':
         address.delete()
-        messages.success(request, _('Address successfully deleted.'))
+        messages.success(
+            request,
+            pgettext('Storefront message', 'Address successfully deleted.'))
         return HttpResponseRedirect(reverse('profile:details') + '#addresses')
     return TemplateResponse(
         request, 'userprofile/address-delete.html', {'address': address})
+
+
+login = find_and_assign_anonymous_cart()(allauth_login)

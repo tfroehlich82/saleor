@@ -1,6 +1,13 @@
+a.btn {
+  display: inline-block;
+}
 .btn {
   transition: 0.3s;
   border-radius: $button-border-radius;
+  text-transform: uppercase;
+  font-weight: 300;
+  font-size: 1rem;
+  cursor: pointer;
   &.home__button {
     text-transform: uppercase;
     font-size: $font-size-h3;
@@ -17,7 +24,6 @@
     background-color: $blue;
     color: $white;
     padding: $global-padding $global-padding * 4;
-    font-size: $font-size-h5;
     &:hover {
       background-color: darken($blue, 10%);
     }
@@ -25,7 +31,6 @@
   &.secondary {
     border: 1px solid $blue;
     padding: $global-padding $global-padding * 2;
-    font-size: $font-size-h5;
     background-color: transparent;
     color: $blue;
     &:hover {
@@ -37,7 +42,6 @@
     background-color: $red;
     color: $white;
     padding: $global-padding $global-padding * 4;
-    font-size: $font-size-h5;
     &:hover {
       background-color: $darkred
     }
@@ -46,10 +50,12 @@
     background-color: $gray;
     border: 0;
     padding: $global-padding / 2 $global-padding * 2;
+    text-transform: none;
   }
   &.btn-link {
     padding: 0;
     vertical-align: baseline;
     color: $gray;
+    text-transform: none;
   }
 }

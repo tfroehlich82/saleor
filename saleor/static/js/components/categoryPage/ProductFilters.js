@@ -3,6 +3,7 @@ import Relay from 'react-relay';
 
 import AttributeInput from './AttributeInput';
 import FilterHeader from './FilterHeader';
+import {isMobile} from '../utils';
 
 class ProductFilters extends Component {
 
@@ -36,9 +37,9 @@ class ProductFilters extends Component {
   componentWillMount() {
     this.props.attributes.map((attribute) => {
       const attrValue = `${attribute.name}`;
-      this.setState({
-        visibility: Object.assign(this.state.visibility, {[attrValue]: true})
-      });
+        this.setState({
+          visibility: Object.assign(this.state.visibility, {[attrValue]: !isMobile()})
+        });
     });
   }
 
@@ -58,12 +59,13 @@ class ProductFilters extends Component {
               <ul id={attribute.name}>
                 {attribute.values.map((value) => {
                   const key = this.getFilterKey(attribute.name, value.slug);
-                  if (visibility[attribute.name] || checkedAttributes.includes(key)) {
+                  const isKeyChecked = checkedAttributes.indexOf(key) > -1;
+                  if (visibility[attribute.name] || isKeyChecked) {
                     return (
                       <li key={value.id} className="item">
                         <AttributeInput
                           attribute={attribute}
-                          checked={checkedAttributes.includes(key)}
+                          checked={isKeyChecked}
                           onClick={this.onClick}
                           value={value}
                         />
