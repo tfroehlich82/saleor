@@ -7,34 +7,34 @@ from django.template.context_processors import csrf
 from django.template.response import TemplateResponse
 from django.utils.translation import pgettext_lazy
 from django_prices.templatetags.prices_i18n import gross
+from payments import PaymentStatus
 from prices import Price
 
 from ...core.utils import get_paginator_items
-from ..order.forms import OrderFilterForm
+from ...order import OrderStatus
 from ...order.models import Order, OrderedItem, OrderNote
 from ...userprofile.i18n import AddressForm
+from ..order.forms import OrderFilterForm
 from ..views import staff_member_required
-from .forms import (CancelItemsForm, CancelOrderForm, CapturePaymentForm,
-                    ChangeQuantityForm, MoveItemsForm, OrderNoteForm,
-                    RefundPaymentForm, ReleasePaymentForm, RemoveVoucherForm,
-                    ShipGroupForm, CancelGroupForm)
+from .forms import (CancelGroupForm, CancelItemsForm, CancelOrderForm,
+                    CapturePaymentForm, ChangeQuantityForm, MoveItemsForm,
+                    OrderNoteForm, RefundPaymentForm, ReleasePaymentForm,
+                    RemoveVoucherForm, ShipGroupForm)
 
 
 @staff_member_required
 def order_list(request):
-    orders = Order.objects.prefetch_related(
-        'groups', 'payments', 'groups__items').all()
-
+    orders_all = Order.objects.prefetch_related(
+        'groups', 'payments', 'groups__items', 'user').all()
     active_status = request.GET.get('status')
     if active_status:
-        orders = orders.filter(status=active_status)
-
+        orders = orders_all.filter(status=active_status)
+    else:
+        orders = orders_all
     page = get_paginator_items(orders, 20, request.GET.get('page'))
-
-    form = OrderFilterForm(request.POST or None,
-                           initial={'status': active_status or None})
-
-    ctx = {'object_list': page.object_list, 'page_obj': page,
+    form = OrderFilterForm(
+        request.POST or None, initial={'status': active_status or None})
+    ctx = {'object_list': page.object_list, 'orders_all': orders_all, 'page_obj': page,
            'is_paginated': page.has_other_pages(), 'form': form}
     return TemplateResponse(request, 'dashboard/order/list.html', ctx)
 
@@ -47,18 +47,19 @@ def order_details(request, order_pk):
                             'groups', 'groups__items'))
     order = get_object_or_404(qs, pk=order_pk)
     notes = order.notes.all()
-    all_payments = order.payments.all()
+    all_payments = order.payments.exclude(status=PaymentStatus.INPUT)
     payment = order.payments.last()
     groups = list(order)
     captured = preauthorized = Price(0, currency=order.get_total().currency)
     balance = captured - order.get_total()
     if payment:
-        can_capture = (payment.status == 'preauth' and
-                       order.status != 'cancelled')
-        can_release = payment.status == 'preauth'
-        can_refund = payment.status == 'confirmed'
+        can_capture = (
+            payment.status == PaymentStatus.PREAUTH and
+            order.status != OrderStatus.CANCELLED)
+        can_release = payment.status == PaymentStatus.PREAUTH
+        can_refund = payment.status == PaymentStatus.CONFIRMED
         preauthorized = payment.get_total_price()
-        if payment.status == 'confirmed':
+        if payment.status == PaymentStatus.CONFIRMED:
             captured = payment.get_captured_price()
             balance = captured - order.get_total()
     else:
@@ -103,7 +104,8 @@ def capture_payment(request, order_pk, payment_pk):
     if form.is_valid() and form.capture():
         amount = form.cleaned_data['amount']
         msg = pgettext_lazy(
-            'Dashboard message related to a payment', 'Captured %(amount)s') % {'amount': gross(amount)}
+            'Dashboard message related to a payment',
+            'Captured %(amount)s') % {'amount': gross(amount)}
         payment.order.create_history_entry(comment=msg, user=request.user)
         messages.success(request, msg)
         return redirect('dashboard:order-details', order_pk=order.pk)
@@ -206,6 +208,7 @@ def orderline_split(request, order_pk, line_pk):
                 'new_group': target_group}
         order.create_history_entry(comment=msg, user=request.user)
         messages.success(request, msg)
+        return redirect('dashboard:order-details', order_pk=order.pk)
     elif form.errors:
         status = 400
     ctx = {'order': order, 'object': item, 'form': form, 'line_pk': line_pk}
@@ -227,12 +230,14 @@ def orderline_cancel(request, order_pk, line_pk):
         with transaction.atomic():
             form.cancel_item()
             order.create_history_entry(comment=msg, user=request.user)
+            messages.success(request, msg)
         return redirect('dashboard:order-details', order_pk=order.pk)
     elif form.errors:
         status = 400
     ctx = {'order': order, 'item': item, 'form': form}
-    return TemplateResponse(request, 'dashboard/order/modal_cancel_line.html',
-                            ctx, status=status)
+    return TemplateResponse(
+        request, 'dashboard/order/modal_cancel_line.html',
+        ctx, status=status)
 
 
 @staff_member_required
@@ -293,16 +298,13 @@ def address_view(request, order_pk, address_type):
             'Dashboard message',
             'Updated billing address')
     form = AddressForm(request.POST or None, instance=address)
-    status = 200
     if form.is_valid():
         form.save()
         order.create_history_entry(comment=success_msg, user=request.user)
         messages.success(request, success_msg)
-    elif form.errors:
-        status = 400
+        return redirect('dashboard:order-details', order_pk=order_pk)
     ctx = {'order': order, 'address_type': address_type, 'form': form}
-    return TemplateResponse(request, 'dashboard/order/modal_address_edit.html',
-                            ctx, status=status)
+    return TemplateResponse(request, 'dashboard/order/address_form.html', ctx)
 
 
 @staff_member_required

@@ -2,16 +2,16 @@ from __future__ import unicode_literals
 
 from django import forms
 from django.conf import settings
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.shortcuts import get_object_or_404
 from django.utils.translation import npgettext_lazy, pgettext_lazy
 from django_prices.forms import PriceField
-from payments import PaymentError
-from payments.models import PAYMENT_STATUS_CHOICES
+from payments import PaymentError, PaymentStatus
 from satchless.item import InsufficientStock
 
 from ...cart.forms import QuantityField
 from ...discount.models import Voucher
-from ...order import Status
+from ...order import OrderStatus
 from ...order.models import DeliveryGroup, Order, OrderedItem, OrderNote
 from ...order.utils import cancel_order, cancel_delivery_group
 from ...product.models import ProductVariant, Stock
@@ -31,8 +31,10 @@ class OrderNoteForm(forms.ModelForm):
 
 
 class ManagePaymentForm(forms.Form):
-    amount = PriceField(max_digits=12, decimal_places=2,
-                        currency=settings.DEFAULT_CURRENCY)
+    amount = PriceField(
+        label=pgettext_lazy(
+            'Payment management form (capture, refund, release)', 'Amount'),
+        max_digits=12, decimal_places=2, currency=settings.DEFAULT_CURRENCY)
 
     def __init__(self, *args, **kwargs):
         self.payment = kwargs.pop('payment')
@@ -41,7 +43,7 @@ class ManagePaymentForm(forms.Form):
 
 class CapturePaymentForm(ManagePaymentForm):
     def clean(self):
-        if self.payment.status != 'preauth':
+        if self.payment.status != PaymentStatus.PREAUTH:
             raise forms.ValidationError(
                 pgettext_lazy(
                     'Payment form error',
@@ -63,7 +65,7 @@ class CapturePaymentForm(ManagePaymentForm):
 
 class RefundPaymentForm(ManagePaymentForm):
     def clean(self):
-        if self.payment.status != 'confirmed':
+        if self.payment.status != PaymentStatus.CONFIRMED:
             raise forms.ValidationError(
                 pgettext_lazy(
                     'Payment form error',
@@ -89,7 +91,7 @@ class ReleasePaymentForm(forms.Form):
         super(ReleasePaymentForm, self).__init__(*args, **kwargs)
 
     def clean(self):
-        if self.payment.status != 'preauth':
+        if self.payment.status != PaymentStatus.PREAUTH:
             raise forms.ValidationError(
                 pgettext_lazy(
                     'Payment form error',
@@ -109,14 +111,18 @@ class ReleasePaymentForm(forms.Form):
 
 
 class MoveItemsForm(forms.Form):
+    NEW_SHIPMENT = 'new'
     quantity = QuantityField(
-        label=pgettext_lazy('Move items form label', 'Quantity'))
+        label=pgettext_lazy('Move items form label', 'Quantity'),
+        validators=[MinValueValidator(1)])
     target_group = forms.ChoiceField(
         label=pgettext_lazy('Move items form label', 'Target shipment'))
 
     def __init__(self, *args, **kwargs):
         self.item = kwargs.pop('item')
         super(MoveItemsForm, self).__init__(*args, **kwargs)
+        self.fields['quantity'].validators.append(
+            MaxValueValidator(self.item.quantity))
         self.fields['quantity'].widget.attrs.update({
             'max': self.item.quantity, 'min': 1})
         self.fields['target_group'].choices = self.get_delivery_group_choices()
@@ -125,7 +131,7 @@ class MoveItemsForm(forms.Form):
         group = self.item.delivery_group
         groups = group.order.groups.exclude(pk=group.pk).exclude(
             status='cancelled')
-        choices = [('new', pgettext_lazy(
+        choices = [(self.NEW_SHIPMENT, pgettext_lazy(
             'Delivery group value for `target_group` field',
             'New shipment'))]
         choices.extend([(g.pk, str(g)) for g in groups])
@@ -135,7 +141,7 @@ class MoveItemsForm(forms.Form):
         how_many = self.cleaned_data['quantity']
         choice = self.cleaned_data['target_group']
         old_group = self.item.delivery_group
-        if choice == 'new':
+        if choice == self.NEW_SHIPMENT:
             # For new group we use the same delivery name but zero price
             target_group = old_group.order.groups.create(
                 status=old_group.status,
@@ -156,7 +162,8 @@ class CancelItemsForm(forms.Form):
         if self.item.stock:
             Stock.objects.deallocate_stock(self.item.stock, self.item.quantity)
         order = self.item.delivery_group.order
-        OrderedItem.objects.remove_empty_groups(self.item, force=True)
+        self.item.quantity = 0
+        OrderedItem.objects.remove_empty_groups(self.item)
         Order.objects.recalculate_order(order)
 
 
@@ -211,7 +218,7 @@ class ShipGroupForm(forms.ModelForm):
                 'Parcel tracking number')})
 
     def clean(self):
-        if self.instance.status != 'new':
+        if self.instance.status != OrderStatus.NEW:
             raise forms.ValidationError(
                 pgettext_lazy(
                     'Ship group form error',
@@ -225,10 +232,10 @@ class ShipGroupForm(forms.ModelForm):
             if stock is not None:
                 # remove and deallocate quantity
                 Stock.objects.decrease_stock(stock, line.quantity)
-        self.instance.change_status('shipped')
+        self.instance.change_status(OrderStatus.SHIPPED)
         statuses = [g.status for g in order.groups.all()]
-        if 'shipped' in statuses and 'new' not in statuses:
-            order.change_status('shipped')
+        if OrderStatus.SHIPPED in statuses and OrderStatus.NEW not in statuses:
+            order.change_status(OrderStatus.SHIPPED)
 
 
 class CancelGroupForm(forms.Form):
@@ -282,11 +289,15 @@ class RemoveVoucherForm(forms.Form):
         self.order.voucher = None
         Order.objects.recalculate_order(self.order)
 
-ORDER_STATUS_CHOICES = [('', pgettext_lazy('Order status field value',
-                                           'All'))] + Status.CHOICES
 
-PAYMENT_STATUS_CHOICES = (('', pgettext_lazy('Payment status field value',
-                                             'All')),) + PAYMENT_STATUS_CHOICES
+ORDER_STATUS_CHOICES = [
+    ('', pgettext_lazy('Order status field value', 'All'))
+] + OrderStatus.CHOICES
+
+
+PAYMENT_STATUS_CHOICES = [
+    ('', pgettext_lazy('Payment status field value', 'All')),
+] + PaymentStatus.CHOICES
 
 
 class OrderFilterForm(forms.Form):
