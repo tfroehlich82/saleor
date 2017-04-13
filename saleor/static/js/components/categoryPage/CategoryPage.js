@@ -10,7 +10,7 @@ import SortBy from './SortBy';
 import { ensureAllowedName, getAttributesFromQuery, getFromQuery } from './utils';
 import {isMobile} from '../utils';
 
-const PAGINATE_BY = 20;
+const PAGINATE_BY = 24;
 const SORT_BY_FIELDS = ['name', 'price'];
 
 class CategoryPage extends Component {
@@ -111,15 +111,16 @@ class CategoryPage extends Component {
   }
 
   render() {
-    const { attributes, category, relay: { variables } } = this.props;
+    const { attributes, category, relay: { variables }, relay } = this.props;
+    const { pendingVariables } = relay;
     const { filtersMenu } = this.state;
     return (
       <div className="category-page">
         <div className="category-top">
           <div className="row">
-            <div className="col-md-8">
-              <ul className="category-breadcrumbs hidden-sm-down">
-                <li><a href="/">{gettext('Home')}</a></li>
+            <div className="col-md-7">
+              <ul className="breadcrumbs list-unstyled hidden-sm-down">
+                <li><a href="/">{pgettext('Main navigation item', 'Home')}</a></li>
                   {category.ancestors && (category.ancestors.map((ancestor) => {
                     return (
                       <li key={ancestor.pk}><a href={ancestor.url}>{ancestor.name}</a></li>
@@ -128,12 +129,12 @@ class CategoryPage extends Component {
                 <li><a href={category.url}>{category.name}</a></li>
               </ul>
             </div>
-            <div className="col-md-4">
+            <div className="col-md-5">
               <div className="row">
                 <div className="col-6 col-md-2 col-lg-6 filters-menu">
-                  <span className="filters-menu-label hidden-sm-up" onClick={() => this.toggleMenu(filtersMenu)}>{gettext('Filters')}</span>
+                  <span className="filters-menu__label hidden-sm-up" onClick={() => this.toggleMenu(filtersMenu)}>{pgettext('Category page filters', 'Filters')}</span>
                   {(variables.attributesFilter.length || variables.minPrice || variables.maxPrice) && (
-                    <span className="filters-menu-icon hidden-sm-up"></span>
+                    <span className="filters-menu__icon hidden-sm-up"></span>
                   )}
                 </div>
                 <div className="col-6 col-md-10 col-lg-6">
@@ -151,8 +152,8 @@ class CategoryPage extends Component {
             {filtersMenu && (
             <div>
               <h2>
-                {gettext('Filters')}
-                <span className="clear-filters float-right" onClick={this.clearFilters}>{gettext('Clear filters')}</span>
+                {pgettext('Category page filters', 'Filters')}
+                <span className="clear-filters float-right" onClick={this.clearFilters}>{pgettext('Category page filters', 'Clear filters')}</span>
               </h2>
               <div className="product-filters">
                 <ProductFilters
@@ -174,6 +175,7 @@ class CategoryPage extends Component {
               <ProductList
                 onLoadMore={this.incrementProductsCount}
                 products={category.products}
+                updating={pendingVariables}
               />
             </div>
           </div>

@@ -1,5 +1,6 @@
 {% extends "dashboard/base.html" %}
 {% load i18n %}
+{% load product_first_image from product_images %}
 
 {% block title %}
   {% trans "Delete image" context "Delete image page title" %} - {{ block.super }}
@@ -16,7 +17,7 @@
   <ul class="breadcrumbs breadcrumbs--with-menu">
     <li>
       <a href="{% url "dashboard:product-list" %}" class="breadcrumbs--ellipsed-item">
-        {% trans "Products" context "Delete image breadcrumbs" %}
+        {% trans "Products" context "Dashboard products list" %}
       </a>
     </li>
     <li>
@@ -44,7 +45,9 @@
             <div class="card-title black-text">
               {{ product_image.alt }}
             </div>
-            <img src="{{ product_image.image.crop.400x400}}" alt="{{ product_image.alt }}" class="responsive-img">
+            <img src="{% product_first_image product size="255x255" method="crop" %}" 
+                 srcset="{% product_first_image product size="255x255" method="crop" %} 1x, {% product_first_image product size="510x510" method="crop" %} 2x" 
+                 alt="{{ product_image.alt }}" class="responsive-img">
           </div>
         </div>
       </div>
@@ -52,12 +55,10 @@
     <div class="row">
       <div class="col m6 l4 offset-m3 offset-l4 right-align">
         <a href="{% url 'dashboard:product-update' pk=product.pk %}#images" class="btn-flat">
-          <i class="material-icons">clear</i>
-          {% trans "Cancel" context "Delete image text primary action" %}
+          {% trans "Cancel" context "Dashboard cancel action" %}
         </a>
         <button type="submit" class="btn materialize-red">
-          <i class="material-icons">delete_forever</i>
-          {% trans "Delete" context "Delete image secondary action" %}
+          {% trans "Delete" context "Dashboard delete action" %}
         </button>
       </div>
     </div>

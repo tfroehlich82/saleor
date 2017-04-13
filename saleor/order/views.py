@@ -1,6 +1,5 @@
 import logging
 
-from allauth.account.forms import LoginForm
 from django.conf import settings
 from django.contrib import messages, auth
 from django.contrib.auth.decorators import login_required
@@ -15,6 +14,7 @@ from .forms import PaymentDeleteForm, PaymentMethodsForm, PasswordForm
 from .models import Order, Payment
 from .utils import check_order_status, attach_order_to_user
 from ..core.utils import get_client_ip
+from ..registration.forms import LoginForm
 from ..userprofile.models import User
 from . import OrderStatus
 
@@ -141,12 +141,11 @@ def create_password(request, token):
     else:
         login_form = None
     if register_form.is_valid():
-        register_form.save(request)
-        password = form_data.get('password1')
-        auth_user = auth.authenticate(email=email, password=password)
-        if auth_user is not None:
-            auth.login(request, auth_user)
-        attach_order_to_user(order, auth_user)
+        register_form.save()
+        password = register_form.cleaned_data.get('password')
+        user = auth.authenticate(email=email, password=password)
+        auth.login(request, user)
+        attach_order_to_user(order, user)
         return redirect('order:details', token=token)
     ctx = {'form': register_form, 'email': email, 'order': order,
            'login_form': login_form}

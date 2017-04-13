@@ -2,9 +2,10 @@
 {% load i18n %}
 {% load prices_i18n %}
 {% load staticfiles %}
+{% load product_first_image from product_images %}
 
 {% block title %}
-  {% trans "Delete" context "Product delete page title" %} {{ product }} - {{ block.super }}
+  {% trans "Delete" context "Dashboard delete action" %} {{ product }} - {{ block.super }}
 {% endblock %}
 
 {% block body_class %}body-store body-products{% endblock %}
@@ -18,7 +19,7 @@
   <ul class="breadcrumbs breadcrumbs--with-menu">
     <li>
       <a href="{% url "dashboard:product-list" %}" class="breadcrumbs--ellipsed-item">
-        {% trans "Products" context "Product delete breadcrumbs" %}
+        {% trans "Products" context "Dashboard products list" %}
       </a>
     </li>
     <li>
@@ -48,15 +49,13 @@
       <div class="col m6 l4">
         <div class="card">
           <div class="card-content">
-            {% if object.images.exists %}
-              <img src="{{ product.images.first.image.crop.400x400 }}" alt="" class="responsive-img">
-            {% else %}
-              <img src="{% static 'images/product-image-placeholder.png' %}" alt="" class="responsive-img">
-            {% endif %}
+            <img src="{% product_first_image product size="255x255" method="crop" %}" 
+                 srcset="{% product_first_image product size="255x255" method="crop" %} 1x, {% product_first_image product size="510x510" method="crop" %} 2x" 
+                 alt="" class="responsive-img">
           </div>
           <div class="card-action">
             <button type="submit" class="card-link">
-              {% trans "Delete" context "Product delete primary action" %}
+              {% trans "Delete" context "Dashboard delete action" %}
             </button>
           </div>
         </div>

@@ -1,4 +1,5 @@
 {% load i18n %}
+{% load product_first_image from product_images %}
 
 <form action="{% url 'dashboard:product-image-delete' product_pk=product.pk img_pk=product_image.pk %}" method="post" novalidate>
   {% csrf_token %}
@@ -7,12 +8,14 @@
     <div class="row">
       <div class="col s12">
         <h5>
-          {% trans "Are you sure?" context "Modal delete image title" %}
+          {% trans "Are you sure?" context "Dashboard confirmation modal" %}
         </h5>
       </div>
     </div>
     <div class="center-align">
-      <img class="responsive-img" src="{{ product_image.image.crop.400x400 }}" alt="">
+      <img class="responsive-img" src="{% product_first_image product size="255x255" method="crop" %}" 
+           srcset="{% product_first_image product size="255x255" method="crop" %} 1x, {% product_first_image product size="510x510" method="crop" %} 2x" 
+           alt="">
     </div>
     <p>
       {% blocktrans trimmed context "Modal delete image text" %}
@@ -22,10 +25,10 @@
   </div>
   <div class="modal-footer">
     <button type="submit" class="modal-action btn-flat">
-      {% trans "Delete" context "Modal delete image primary action" %}
+      {% trans "Delete" context "Dashboard delete action" %}
     </button>
     <a href="#!" class="modal-action modal-close btn-flat">
-      {% trans "Cancel" context "Modal delete image secondary action" %}
+      {% trans "Cancel" context "Dashboard cancel action" %}
     </a>
   </div>
 </form>

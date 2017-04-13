@@ -20,6 +20,7 @@ from saleor.cart.models import Cart, ProductGroup
 from saleor.cart.views import update
 from saleor.discount.models import Sale
 from saleor.product.models import Category
+from saleor.shipping.utils import get_shipment_options
 
 
 @pytest.fixture()
@@ -230,8 +231,8 @@ def test_find_and_assign_anonymous_cart(
     client.cookies[utils.COOKIE_NAME] = value
     # Anonymous logs in
     response = client.post(
-        '/account/login',
-        {'login': customer_user.email, 'password': 'password'})
+        reverse('account_login'),
+        {'username': customer_user.email, 'password': 'password'}, follow=True)
     assert response.context['user'] == customer_user
     # User should have only one cart, the same as he had previously in
     # anonymous session
@@ -244,8 +245,8 @@ def test_find_and_assign_anonymous_cart(
 def test_login_without_a_cart(customer_user, client):
     assert utils.COOKIE_NAME not in client.cookies
     response = client.post(
-        '/account/login',
-        {'login': customer_user.email, 'password': 'password'})
+        reverse('account_login'),
+        {'username': customer_user.email, 'password': 'password'}, follow=True)
     assert response.context['user'] == customer_user
     authenticated_user_carts = customer_user.carts.filter(
         status=CartStatus.OPEN)
@@ -256,8 +257,8 @@ def test_login_with_incorrect_cookie_token(customer_user, client):
     value = signing.get_cookie_signer(salt=utils.COOKIE_NAME).sign('incorrect')
     client.cookies[utils.COOKIE_NAME] = value
     response = client.post(
-        '/account/login',
-        {'login': customer_user.email, 'password': 'password'})
+        reverse('account_login'),
+        {'username': customer_user.email, 'password': 'password'}, follow=True)
     assert response.context['user'] == customer_user
     authenticated_user_carts = customer_user.carts.filter(
         status=CartStatus.OPEN)
@@ -718,3 +719,21 @@ def test_get_or_create_db_cart(customer_user, db, rf):
     request.user = AnonymousUser()
     decorated_view(request)
     assert Cart.objects.filter(user__isnull=True).count() == 1
+
+
+def test_get_cart_data(request_cart_with_item, shipping_method):
+    shippment_option = get_shipment_options('PL')
+    cart_data = utils.get_cart_data(
+        request_cart_with_item, shippment_option, 'USD', None)
+    assert cart_data['cart_total'] == Price(net=10, currency='USD')
+    assert cart_data['total_with_shipping'].min_price == Price(
+        net=20, currency='USD')
+
+
+def test_get_cart_data_no_shipping(request_cart_with_item):
+    shippment_option = get_shipment_options('PL')
+    cart_data = utils.get_cart_data(
+        request_cart_with_item, shippment_option, 'USD', None)
+    cart_total = cart_data['cart_total']
+    assert cart_total == Price(net=10, currency='USD')
+    assert cart_data['total_with_shipping'].min_price == cart_total
